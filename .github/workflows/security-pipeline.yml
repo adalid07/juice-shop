@@ -11,25 +11,25 @@ jobs:
     name: SAST - Semgrep
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Run Semgrep
         run: |
           pip install semgrep
-          semgrep --config p/owasp-top-ten --json --output semgrep-report.json . || true
+          semgrep --config p/owasp-top-ten --html --output semgrep-report.html . || true
       - name: Upload SAST report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: sast-semgrep-report
-          path: semgrep-report.json
+          path: semgrep-report.html
 
   sca:
     name: SCA - Dependency Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
       - name: Install dependencies
@@ -57,18 +57,15 @@ jobs:
     name: DAST - OWASP ZAP
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Run ZAP Scan
-        uses: zaproxy/action-baseline@v0.10.0
+        uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'https://juice-shop.herokuapp.com'
-          report_html: zap-report.html
-          report_json: zap-report.json
+          cmd_options: '-r zap-report.html'
       - name: Upload DAST report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dast-zap-report
-          path: |
-            zap-report.html
-            zap-report.json
+          path: zap-report.html
