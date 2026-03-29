@@ -96,14 +96,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Start Juice Shop
+        run: |
+          docker run -d -p 3000:3000 bkimminich/juice-shop
+          sleep 30
+
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: 'https://juice-shop.herokuapp.com'
+          target: 'http://localhost:3000'
+
+      - name: List generated files
+        if: always()
+        run: ls -la *.html *.md 2>/dev/null || echo "no html files found"
 
       - name: Upload DAST report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dast-zap-report
-          path: report_html.html
+          path: |
+            report_html.html
+            report.html
