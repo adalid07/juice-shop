@@ -99,12 +99,21 @@ jobs:
       - name: Start Juice Shop
         run: |
           docker run -d -p 3000:3000 bkimminich/juice-shop
-          sleep 30
+          echo "Esperando que Juice Shop arranque..."
+          for i in {1..20}; do
+            if curl -s http://localhost:3000 > /dev/null; then
+              echo "Juice Shop listo!"
+              break
+            fi
+            echo "Intento $i - esperando..."
+            sleep 10
+          done
 
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:3000'
+          allow_issue_writing: false
 
       - name: List generated files
         if: always()
@@ -115,6 +124,4 @@ jobs:
         if: always()
         with:
           name: dast-zap-report
-          path: |
-            report_html.html
-            report.html
+          path: report_html.html
