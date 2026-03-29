@@ -111,17 +111,20 @@ jobs:
 
       - name: Run ZAP Docker Scan
         run: |
+          mkdir -p zap-output
+          chmod 777 zap-output
           docker run --network host \
-            -v $(pwd):/zap/wrk/:rw \
+            -v $(pwd)/zap-output:/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t http://localhost:3000 \
             -r zap-report.html \
             -I || true
+          ls -la zap-output/
 
       - name: Upload DAST report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dast-zap-report
-          path: zap-report.html
+          path: zap-output/zap-report.html
