@@ -12,28 +12,64 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run Semgrep
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep JSON
+        run: semgrep --config p/owasp-top-ten --json --output semgrep.json . || true
+
+      - name: Convert to HTML
         run: |
-          pip install semgrep
-          semgrep --config p/owasp-top-ten --html --output semgrep-report.html . || true
+          python3 << 'EOF'
+          import json
+          with open("semgrep.json") as f:
+              data = json.load(f)
+          results = data.get("results", [])
+          rows = ""
+          for r in results:
+              rows += f"<tr><td>{r.get('path','')}</td><td>{r.get('start',{}).get('line','')}</td><td>{r.get('check_id','').split('.')[-1]}</td><td>{r.get('extra',{}).get('severity','')}</td><td>{r.get('extra',{}).get('message','')[:120]}</td></tr>"
+          html = f"""<html><head><title>SAST - Semgrep Report</title>
+          <style>
+            body{{font-family:Arial;margin:30px;background:#f9f9f9}}
+            h1{{color:#c0392b}}
+            table{{width:100%;border-collapse:collapse;background:white}}
+            th{{background:#c0392b;color:white;padding:10px}}
+            td{{border:1px solid #ddd;padding:8px}}
+            tr:nth-child(even){{background:#fdf2f2}}
+            .summary{{background:#c0392b;color:white;padding:15px;border-radius:5px;margin-bottom:20px}}
+          </style></head><body>
+          <h1>SAST Report - Semgrep OWASP Top 10</h1>
+          <div class="summary"><b>Total vulnerabilidades encontradas: {len(results)}</b></div>
+          <table><tr><th>Archivo</th><th>Linea</th><th>Regla</th><th>Severidad</th><th>Descripcion</th></tr>
+          {rows}
+          </table></body></html>"""
+          with open("sast-report.html", "w") as f:
+              f.write(html)
+          print(f"Reporte generado con {len(results)} findings")
+          EOF
+
       - name: Upload SAST report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: sast-semgrep-report
-          path: semgrep-report.html
+          path: sast-report.html
 
   sca:
     name: SCA - Dependency Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+
       - name: Install dependencies
         run: npm install --ignore-scripts
+
       - name: Run Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
@@ -46,6 +82,7 @@ jobs:
             --exclude **/*.zip
             --exclude **/*.jar
             --disableAssembly
+
       - name: Upload SCA report
         uses: actions/upload-artifact@v4
         if: always()
@@ -58,14 +95,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Run ZAP Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'https://juice-shop.herokuapp.com'
-          cmd_options: '-r zap-report.html'
+
       - name: Upload DAST report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dast-zap-report
-          path: zap-report.html
+          path: report_html.html
