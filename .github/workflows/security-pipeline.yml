@@ -1,4 +1,4 @@
-name: Security Pipeline - SAST, SCA, DAST
+name: Security Pipeline - SAST, SCA, DAST, Secrets
 
 on:
   push:
@@ -128,3 +128,63 @@ jobs:
         with:
           name: dast-zap-report
           path: zap-output/zap-report.html
+
+  secrets:
+    name: Secrets - Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        run: |
+          docker run --rm \
+            -v $(pwd):/path \
+            zricethezav/gitleaks:latest \
+            detect \
+            --source /path \
+            --report-format json \
+            --report-path /path/gitleaks-report.json \
+            --no-git || true
+
+      - name: Convert Gitleaks JSON to HTML
+        run: |
+          python3 << 'EOF'
+          import json
+          try:
+              with open("gitleaks-report.json") as f:
+                  results = json.load(f)
+          except:
+              results = []
+          if not isinstance(results, list):
+              results = []
+          rows = ""
+          for r in results:
+              rows += f"<tr><td>{r.get('File','')}</td><td>{r.get('StartLine','')}</td><td>{r.get('RuleID','')}</td><td>{r.get('Description','')[:100]}</td><td>{r.get('Secret','')[:30]}...</td></tr>"
+          html = f"""<html><head><title>Secrets Report - Gitleaks</title>
+          <style>
+            body{{font-family:Arial;margin:30px;background:#f9f9f9}}
+            h1{{color:#8e44ad}}
+            table{{width:100%;border-collapse:collapse;background:white}}
+            th{{background:#8e44ad;color:white;padding:10px}}
+            td{{border:1px solid #ddd;padding:8px;word-break:break-all}}
+            tr:nth-child(even){{background:#f5eef8}}
+            .summary{{background:#8e44ad;color:white;padding:15px;border-radius:5px;margin-bottom:20px}}
+          </style></head><body>
+          <h1>Secrets Report - Gitleaks</h1>
+          <div class="summary"><b>Total secretos encontrados: {len(results)}</b></div>
+          <table><tr><th>Archivo</th><th>Linea</th><th>Regla</th><th>Descripcion</th><th>Secreto (parcial)</th></tr>
+          {rows}
+          </table></body></html>"""
+          with open("secrets-report.html", "w") as f:
+              f.write(html)
+          print(f"Reporte generado con {len(results)} secretos encontrados")
+          EOF
+
+      - name: Upload Secrets report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: secrets-gitleaks-report
+          path: secrets-report.html
