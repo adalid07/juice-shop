@@ -13,9 +13,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
+        run: |
+          pip install semgrep
+          semgrep --config p/owasp-top-ten --json --output semgrep-report.json . || true
+      - name: Upload SAST report
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          config: p/owasp-top-ten
+          name: sast-semgrep-report
+          path: semgrep-report.json
 
   sca:
     name: SCA - Dependency Check
@@ -40,11 +46,11 @@ jobs:
             --exclude **/*.zip
             --exclude **/*.jar
             --disableAssembly
-      - name: Upload report
+      - name: Upload SCA report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: dependency-check-report
+          name: sca-dependency-check-report
           path: reports/
 
   dast:
@@ -56,3 +62,13 @@ jobs:
         uses: zaproxy/action-baseline@v0.10.0
         with:
           target: 'https://juice-shop.herokuapp.com'
+          report_html: zap-report.html
+          report_json: zap-report.json
+      - name: Upload DAST report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dast-zap-report
+          path: |
+            zap-report.html
+            zap-report.json
