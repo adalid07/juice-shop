@@ -7,6 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
+
   sast:
     name: SAST - Semgrep
     runs-on: ubuntu-latest
@@ -19,6 +20,16 @@ jobs:
       - name: Run Semgrep JSON
         run: semgrep --config p/owasp-top-ten --json --output semgrep.json . || true
 
+      - name: Run Semgrep SARIF
+        run: semgrep --config p/owasp-top-ten --sarif --output semgrep.sarif . || true
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep-sast
+
       - name: Convert to HTML
         run: |
           python3 << 'EOF'
@@ -28,33 +39,46 @@ jobs:
           results = data.get("results", [])
           rows = ""
           for r in results:
-              rows += f"<tr><td>{r.get('path','')}</td><td>{r.get('start',{}).get('line','')}</td><td>{r.get('check_id','').split('.')[-1]}</td><td>{r.get('extra',{}).get('severity','')}</td><td>{r.get('extra',{}).get('message','')[:120]}</td></tr>"
+              sev = r.get('extra',{}).get('severity','INFO')
+              color = "#c0392b" if sev=="ERROR" else "#e67e22" if sev=="WARNING" else "#3498db"
+              rows += f"<tr><td>{r.get('path','')}</td><td>{r.get('start',{}).get('line','')}</td><td>{r.get('check_id','').split('.')[-1]}</td><td style='color:{color};font-weight:bold'>{sev}</td><td>{r.get('extra',{}).get('message','')[:120]}</td></tr>"
+          critical = sum(1 for r in results if r.get('extra',{}).get('severity','')=='ERROR')
+          high     = sum(1 for r in results if r.get('extra',{}).get('severity','')=='WARNING')
           html = f"""<html><head><title>SAST - Semgrep Report</title>
           <style>
             body{{font-family:Arial;margin:30px;background:#f9f9f9}}
             h1{{color:#c0392b}}
             table{{width:100%;border-collapse:collapse;background:white}}
-            th{{background:#c0392b;color:white;padding:10px}}
+            th{{background:#c0392b;color:white;padding:10px;text-align:left}}
             td{{border:1px solid #ddd;padding:8px}}
             tr:nth-child(even){{background:#fdf2f2}}
-            .summary{{background:#c0392b;color:white;padding:15px;border-radius:5px;margin-bottom:20px}}
+            .summary{{background:#c0392b;color:white;padding:15px;border-radius:5px;margin-bottom:20px;display:flex;gap:30px}}
+            .metric{{text-align:center}}
+            .metric-num{{font-size:2em;font-weight:bold}}
           </style></head><body>
           <h1>SAST Report - Semgrep OWASP Top 10</h1>
-          <div class="summary"><b>Total vulnerabilidades encontradas: {len(results)}</b></div>
+          <div class="summary">
+            <div class="metric"><div class="metric-num">{len(results)}</div><div>Total</div></div>
+            <div class="metric"><div class="metric-num">{critical}</div><div>Criticas</div></div>
+            <div class="metric"><div class="metric-num">{high}</div><div>Altas</div></div>
+          </div>
           <table><tr><th>Archivo</th><th>Linea</th><th>Regla</th><th>Severidad</th><th>Descripcion</th></tr>
           {rows}
           </table></body></html>"""
           with open("sast-report.html", "w") as f:
               f.write(html)
-          print(f"Reporte generado con {len(results)} findings")
+          print(f"SAST: {len(results)} findings ({critical} criticas, {high} altas)")
           EOF
 
-      - name: Upload SAST report
+      - name: Upload SAST artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: sast-semgrep-report
-          path: sast-report.html
+          name: sast-results
+          path: |
+            sast-report.html
+            semgrep.json
+            semgrep.sarif
 
   sca:
     name: SCA - Dependency Check
@@ -70,12 +94,12 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-scripts
 
-      - name: Run Dependency Check
+      - name: Run Dependency Check HTML + JSON
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'juice-shop'
           path: '.'
-          format: 'HTML'
+          format: 'HTML JSON'
           args: >
             --enableExperimental
             --nodePackageSkipDevDependencies
@@ -83,12 +107,93 @@ jobs:
             --exclude **/*.jar
             --disableAssembly
 
-      - name: Upload SCA report
+      - name: Upload SCA artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: sca-dependency-check-report
+          name: sca-results
           path: reports/
+
+  secrets:
+    name: Secrets - Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks JSON
+        run: |
+          docker run --rm \
+            -v $(pwd):/path \
+            zricethezav/gitleaks:latest \
+            detect \
+            --source /path \
+            --report-format json \
+            --report-path /path/gitleaks-report.json \
+            --no-git || true
+
+      - name: Run Gitleaks SARIF
+        run: |
+          docker run --rm \
+            -v $(pwd):/path \
+            zricethezav/gitleaks:latest \
+            detect \
+            --source /path \
+            --report-format sarif \
+            --report-path /path/gitleaks-report.sarif \
+            --no-git || true
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gitleaks-report.sarif
+          category: gitleaks-secrets
+
+      - name: Convert Gitleaks JSON to HTML
+        run: |
+          python3 << 'EOF'
+          import json
+          try:
+              with open("gitleaks-report.json") as f:
+                  results = json.load(f)
+          except:
+              results = []
+          if not isinstance(results, list):
+              results = []
+          rows = ""
+          for r in results:
+              rows += f"<tr><td>{r.get('File','')}</td><td>{r.get('StartLine','')}</td><td>{r.get('RuleID','')}</td><td>{r.get('Description','')[:100]}</td><td style='font-family:monospace;color:#c0392b'>{str(r.get('Secret',''))[:30]}...</td></tr>"
+          html = f"""<html><head><title>Secrets Report - Gitleaks</title>
+          <style>
+            body{{font-family:Arial;margin:30px;background:#f9f9f9}}
+            h1{{color:#8e44ad}}
+            table{{width:100%;border-collapse:collapse;background:white}}
+            th{{background:#8e44ad;color:white;padding:10px;text-align:left}}
+            td{{border:1px solid #ddd;padding:8px;word-break:break-all}}
+            tr:nth-child(even){{background:#f5eef8}}
+            .summary{{background:#8e44ad;color:white;padding:15px;border-radius:5px;margin-bottom:20px}}
+          </style></head><body>
+          <h1>Secrets Report - Gitleaks</h1>
+          <div class="summary"><b>Secretos expuestos detectados: {len(results)}</b></div>
+          <table><tr><th>Archivo</th><th>Linea</th><th>Regla</th><th>Descripcion</th><th>Secreto (parcial)</th></tr>
+          {rows}
+          </table></body></html>"""
+          with open("secrets-report.html", "w") as f:
+              f.write(html)
+          print(f"Secrets: {len(results)} secretos encontrados")
+          EOF
+
+      - name: Upload Secrets artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: secrets-results
+          path: |
+            secrets-report.html
+            gitleaks-report.json
+            gitleaks-report.sarif
 
   dast:
     name: DAST - OWASP ZAP
@@ -109,7 +214,7 @@ jobs:
             sleep 10
           done
 
-      - name: Run ZAP Docker Scan
+      - name: Run ZAP Baseline Scan HTML + JSON
         run: |
           mkdir -p zap-output
           chmod 777 zap-output
@@ -119,72 +224,38 @@ jobs:
             zap-baseline.py \
             -t http://localhost:3000 \
             -r zap-report.html \
+            -J zap-report.json \
             -I || true
           ls -la zap-output/
 
-      - name: Upload DAST report
+      - name: Upload DAST artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: dast-zap-report
-          path: zap-output/zap-report.html
+          name: dast-results
+          path: |
+            zap-output/zap-report.html
+            zap-output/zap-report.json
 
-  secrets:
-    name: Secrets - Gitleaks
+  quality-gate:
+    name: Quality Gate - PR Blocker
     runs-on: ubuntu-latest
+    needs: [sast, sca, dast, secrets]
+    if: always()
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Run Gitleaks
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: List downloaded artifacts
+        run: find . -name "*.json" | grep -v node_modules | head -20
+
+      - name: Run Quality Gate
         run: |
-          docker run --rm \
-            -v $(pwd):/path \
-            zricethezav/gitleaks:latest \
-            detect \
-            --source /path \
-            --report-format json \
-            --report-path /path/gitleaks-report.json \
-            --no-git || true
-
-      - name: Convert Gitleaks JSON to HTML
-        run: |
-          python3 << 'EOF'
-          import json
-          try:
-              with open("gitleaks-report.json") as f:
-                  results = json.load(f)
-          except:
-              results = []
-          if not isinstance(results, list):
-              results = []
-          rows = ""
-          for r in results:
-              rows += f"<tr><td>{r.get('File','')}</td><td>{r.get('StartLine','')}</td><td>{r.get('RuleID','')}</td><td>{r.get('Description','')[:100]}</td><td>{r.get('Secret','')[:30]}...</td></tr>"
-          html = f"""<html><head><title>Secrets Report - Gitleaks</title>
-          <style>
-            body{{font-family:Arial;margin:30px;background:#f9f9f9}}
-            h1{{color:#8e44ad}}
-            table{{width:100%;border-collapse:collapse;background:white}}
-            th{{background:#8e44ad;color:white;padding:10px}}
-            td{{border:1px solid #ddd;padding:8px;word-break:break-all}}
-            tr:nth-child(even){{background:#f5eef8}}
-            .summary{{background:#8e44ad;color:white;padding:15px;border-radius:5px;margin-bottom:20px}}
-          </style></head><body>
-          <h1>Secrets Report - Gitleaks</h1>
-          <div class="summary"><b>Total secretos encontrados: {len(results)}</b></div>
-          <table><tr><th>Archivo</th><th>Linea</th><th>Regla</th><th>Descripcion</th><th>Secreto (parcial)</th></tr>
-          {rows}
-          </table></body></html>"""
-          with open("secrets-report.html", "w") as f:
-              f.write(html)
-          print(f"Reporte generado con {len(results)} secretos encontrados")
-          EOF
-
-      - name: Upload Secrets report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: secrets-gitleaks-report
-          path: secrets-report.html
+          python3 quality_gate.py \
+            --maturity "en_desarrollo" \
+            --semgrep  sast-results/semgrep.json \
+            --depcheck "sca-results/dependency-check-report.json" \
+            --zap      dast-results/zap-report.json \
+            --gitleaks secrets-results/gitleaks-report.json
