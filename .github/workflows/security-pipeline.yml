@@ -249,7 +249,9 @@ jobs:
         uses: actions/download-artifact@v4
 
       - name: List downloaded artifacts
-        run: find . -name "*.json" | grep -v node_modules | head -20
+        run: |
+          echo "=== Todos los archivos descargados ==="
+          find: . -type f | grep -v node_modules | grep -v ".git" | sort
 
       - name: Run Quality Gate
         run: |
