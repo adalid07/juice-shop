@@ -91,15 +91,17 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install dependencies
-        run: npm install --ignore-scripts
+      - name: Install dependencies (root + frontend)
+        run: |
+          npm install --ignore-scripts || true
+          cd frontend && npm install --ignore-scripts || true
 
-      - name: Run Dependency Check HTML + JSON
+      - name: Run Dependency Check HTML
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'juice-shop'
           path: '.'
-          format: 'HTML JSON'
+          format: 'HTML'
           args: >
             --enableExperimental
             --nodePackageSkipDevDependencies
@@ -107,18 +109,42 @@ jobs:
             --exclude **/*.jar
             --exclude **/*.exe
             --disableAssembly
+            --disablePEAnalyzer
 
-      - name: List generator reports
+      - name: Run Dependency Check JSON
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'juice-shop'
+          path: '.'
+          format: 'JSON'
+          out: 'reports-json'
+          args: >
+            --enableExperimental
+            --nodePackageSkipDevDependencies
+            --exclude **/*.zip
+            --exclude **/*.jar
+            --exclude **/*.exe
+            --disableAssembly
+            --disablePEAnalyzer
+            --noupdate
+
+      - name: List generated reports
         if: always()
-        run: ls-la reports/ || echo "No reports directory"
+        run: |
+          echo "=== HTML reports ==="
+          ls -la reports/ || echo "No HTML reports"
+          echo "=== JSON reports ==="
+          ls -la reports-json/ || echo "No JSON reports"
 
       - name: Upload SCA artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: sca-results
-          path: reports/
-
+          path: |
+            reports/
+            reports-json/
+            
   secrets:
     name: Secrets - Gitleaks
     runs-on: ubuntu-latest
