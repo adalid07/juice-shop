@@ -257,8 +257,11 @@ jobs:
 
       - name: List downloaded artifacts
         run: |
-          echo "=== Todos los archivos descargados ==="
-          find: . -type f | grep -v node_modules | grep -v ".git" | sort
+          echo "=== Estructura completa de artefactos ==="
+          find . -type f -name "*.json" | grep -v node_modules | grep -v ".git" | sort
+          echo "=== Buscando dependency-check ==="
+          find . -name "*dependency*" | sort
+          find . -name "*sca*" | sort
 
       - name: Run Quality Gate
         run: |
