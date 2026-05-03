@@ -96,12 +96,12 @@ jobs:
           npm install --ignore-scripts || true
           cd frontend && npm install --ignore-scripts || true
 
-      - name: Run Dependency Check HTML
+      - name: Run Dependency Check ALL formats
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'juice-shop'
           path: '.'
-          format: 'HTML'
+          format: 'ALL'
           args: >
             --enableExperimental
             --nodePackageSkipDevDependencies
@@ -109,41 +109,17 @@ jobs:
             --exclude **/*.jar
             --exclude **/*.exe
             --disableAssembly
-            --disablePEAnalyzer
-
-      - name: Run Dependency Check JSON
-        uses: dependency-check/Dependency-Check_Action@main
-        with:
-          project: 'juice-shop'
-          path: '.'
-          format: 'JSON'
-          out: 'reports-json'
-          args: >
-            --enableExperimental
-            --nodePackageSkipDevDependencies
-            --exclude **/*.zip
-            --exclude **/*.jar
-            --exclude **/*.exe
-            --disableAssembly
-            --disablePEAnalyzer
-            --noupdate
 
       - name: List generated reports
         if: always()
-        run: |
-          echo "=== HTML reports ==="
-          ls -la reports/ || echo "No HTML reports"
-          echo "=== JSON reports ==="
-          ls -la reports-json/ || echo "No JSON reports"
+        run: ls -la reports/ || echo "No reports directory"
 
       - name: Upload SCA artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: sca-results
-          path: |
-            reports/
-            reports-json/
+          path: reports/
             
   secrets:
     name: Secrets - Gitleaks
