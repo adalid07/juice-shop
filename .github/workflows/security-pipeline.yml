@@ -105,7 +105,12 @@ jobs:
             --nodePackageSkipDevDependencies
             --exclude **/*.zip
             --exclude **/*.jar
+            --exclude **/*.exe
             --disableAssembly
+
+      -name: List generator reports
+       if: always()
+       run: ls-la reports/ || echo "No reports directory"
 
       - name: Upload SCA artifacts
         uses: actions/upload-artifact@v4
